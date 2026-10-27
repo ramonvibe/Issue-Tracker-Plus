@@ -156,4 +156,24 @@ describe("http", () => {
       error: { code: "wip_limit", message: expect.stringContaining("1/1") },
     })
   })
+
+  test("panel API: edit fields, comment, and read them back with names", async () => {
+    const { request } = client()
+    await request("POST", "/api/setup", admin)
+    await request("POST", "/api/projects", { key: "PLAT", name: "Plataforma" })
+    await request("POST", "/api/projects/PLAT/issues", { title: "Antes" })
+    const patched = await request("PATCH", "/api/issues/PLAT-1", {
+      title: "Depois",
+      contextFiles: ["src/x.ts"],
+    })
+    expect(await patched.json()).toMatchObject({ title: "Depois", contextFiles: ["src/x.ts"] })
+    expect((await request("POST", "/api/issues/PLAT-1/comments", { body: "" })).status).toBe(422)
+    expect(
+      (await request("POST", "/api/issues/PLAT-1/comments", { body: "Olhar o **README**" })).status,
+    ).toBe(201)
+    expect(await (await request("GET", "/api/issues/PLAT-1")).json()).toMatchObject({
+      comments: [{ body: "Olhar o **README**", author: { name: "Ana" } }],
+      events: [{ kind: "created" }, { kind: "edited", data: { fields: ["title", "contextFiles"] } }],
+    })
+  })
 })

@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm"
+import { relations, sql } from "drizzle-orm"
 import {
   bigint,
   boolean,
@@ -150,3 +150,20 @@ export const issueEvents = pgTable(
   },
   (t) => [index("issue_events_issue_idx").on(t.issueId, t.createdAt)],
 )
+
+export const issueRelations = relations(issues, ({ many }) => ({
+  criteria: many(acceptanceCriteria),
+  comments: many(comments),
+  events: many(issueEvents),
+}))
+export const criteriaRelations = relations(acceptanceCriteria, ({ one }) => ({
+  issue: one(issues, { fields: [acceptanceCriteria.issueId], references: [issues.id] }),
+}))
+export const commentRelations = relations(comments, ({ one }) => ({
+  issue: one(issues, { fields: [comments.issueId], references: [issues.id] }),
+  author: one(users, { fields: [comments.authorId], references: [users.id] }),
+}))
+export const eventRelations = relations(issueEvents, ({ one }) => ({
+  issue: one(issues, { fields: [issueEvents.issueId], references: [issues.id] }),
+  actor: one(users, { fields: [issueEvents.actorId], references: [users.id] }),
+}))

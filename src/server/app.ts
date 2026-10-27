@@ -22,17 +22,21 @@ import {
 import type { DB } from "./db.ts"
 import { AppError } from "./errors.ts"
 import {
+  addComment,
   addCriterion,
   board,
+  commentInput,
   createIssue,
   criterionInput,
   criterionPatch,
   deleteCriterion,
   getIssue,
   issueInput,
+  issuePatch,
   moveInput,
   moveIssue,
   updateCriterion,
+  updateIssue,
 } from "./issues.ts"
 import { createProject, listProjects, projectInput, projectPatch, updateProject } from "./projects.ts"
 
@@ -150,6 +154,12 @@ export function createApp({ db, secureCookies, staticDir }: AppConfig) {
       c.json(await createIssue(db, c.req.param("key"), c.req.valid("json"), actor(c)), 201),
     )
     .get("/issues/:ref", async (c) => c.json(await getIssue(db, c.req.param("ref"))))
+    .patch("/issues/:ref", json(issuePatch), async (c) =>
+      c.json(await updateIssue(db, c.req.param("ref"), c.req.valid("json"), actor(c))),
+    )
+    .post("/issues/:ref/comments", json(commentInput), async (c) =>
+      c.json(await addComment(db, c.req.param("ref"), c.req.valid("json").body, actor(c)), 201),
+    )
     .post("/issues/:ref/move", json(moveInput), async (c) =>
       c.json(await moveIssue(db, c.req.param("ref"), c.req.valid("json"), actor(c))),
     )

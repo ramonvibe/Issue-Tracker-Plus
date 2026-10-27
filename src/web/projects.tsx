@@ -8,7 +8,8 @@ import { Button, ErrorText, Field } from "./ui.tsx"
 // Tilts the card toward the pointer through CSS vars, so the transform itself stays in the class list.
 function tilt(e: MouseEvent<HTMLElement>) {
   const el = e.currentTarget
-  const rect = el.getBoundingClientRect()
+  // Measure the untransformed parent: the tilted element's own box changes with the tilt and would feed back.
+  const rect = (el.parentElement ?? el).getBoundingClientRect()
   const x = (e.clientX - rect.left) / rect.width - 0.5
   const y = (e.clientY - rect.top) / rect.height - 0.5
   el.style.setProperty("--rx", `${(-y * 8).toFixed(2)}deg`)

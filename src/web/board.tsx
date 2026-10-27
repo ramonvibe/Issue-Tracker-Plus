@@ -112,7 +112,10 @@ export function BoardPage() {
       const columnKey =
         { h: col - 1, l: col + 1 }[e.key] ?? (/^[1-5]$/.test(e.key) ? Number(e.key) - 1 : null)
 
-      if (e.key === "c") {
+      if (e.key === "e" && current) {
+        e.preventDefault()
+        navigate({ to: "/$ref", params: { ref: current }, state: { edit: true } })
+      } else if (e.key === "c") {
         e.preventDefault()
         // Render and focus the input before the next keystroke arrives, or fast typists lose letters.
         flushSync(() => setCapturing(true))
@@ -216,7 +219,7 @@ export function BoardPage() {
             <kbd>c</kbd> nova ideia <span aria-hidden="true">·</span> <kbd>j</kbd>
             <kbd>k</kbd> navegar <span aria-hidden="true">·</span> <kbd>h</kbd>
             <kbd>l</kbd> ou <kbd>1</kbd>–<kbd>5</kbd> mover <span aria-hidden="true">·</span> <kbd>Enter</kbd>{" "}
-            abrir
+            abrir <span aria-hidden="true">·</span> <kbd>e</kbd> editar
           </p>
           <WipSettings limits={limits} onSave={(l) => mutations.setWipLimits.mutate(l)} />
         </div>
@@ -286,6 +289,7 @@ export function BoardPage() {
       </DndContext>
       {issueRef && (
         <IssuePanel
+          key={issueRef}
           issueRef={issueRef}
           mutations={mutations}
           onMove={(status) => requestMove(issueRef, status)}

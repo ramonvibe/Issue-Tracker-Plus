@@ -7,7 +7,8 @@ export default defineConfig({
   testDir: "e2e",
   fullyParallel: false,
   workers: 1,
-  use: { baseURL: `http://localhost:${port}`, trace: "retain-on-failure" },
+  // Reduced motion: the three.js backdrop renders a single frame instead of animating on software WebGL.
+  use: { baseURL: `http://localhost:${port}`, trace: "retain-on-failure", reducedMotion: "reduce" },
   // The skeleton spec covers first-run setup, so it must run before anything creates the admin.
   projects: [
     { name: "first-run", testMatch: /skeleton\.spec\.ts/ },

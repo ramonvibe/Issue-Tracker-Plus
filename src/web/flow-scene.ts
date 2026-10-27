@@ -35,7 +35,7 @@ function readPalette() {
 
 export function startFlowScene(canvas: HTMLCanvasElement, reducedMotion: boolean): FlowScene {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "low-power" })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100)
   camera.position.set(0, 0, 18)
@@ -112,6 +112,11 @@ export function startFlowScene(canvas: HTMLCanvasElement, reducedMotion: boolean
   scheme.addEventListener("change", onScheme)
 
   const render = (now: number) => {
+    // A background does not need 60 fps: ~30 halves the GPU cost (and the CPU cost on software WebGL).
+    if (now - last < 30 && !reducedMotion) {
+      frame = document.hidden ? 0 : requestAnimationFrame(render)
+      return
+    }
     const dt = Math.min((now - last) / 1000, 0.05)
     last = now
     energy += (energyTarget - energy) * Math.min(dt * 3, 1)

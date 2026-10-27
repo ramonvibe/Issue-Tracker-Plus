@@ -23,6 +23,10 @@ declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router
   }
+  interface HistoryState {
+    // Set when the panel is opened with `e`, so it starts in edit mode.
+    edit?: boolean
+  }
 }
 
 createRoot(document.getElementById("root") as HTMLElement).render(

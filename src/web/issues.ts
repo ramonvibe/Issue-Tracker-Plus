@@ -146,6 +146,49 @@ export function useIssueMutations(key: string) {
       onError: (_e, { ref }, snapshot) => rollback(ref, snapshot),
       onSettled: (_d, _e, { ref }) => refresh(ref),
     }),
+    update: useMutation({
+      mutationFn: ({
+        ref,
+        ...json
+      }: {
+        ref: string
+        title?: string
+        description?: string
+        contextFiles?: string[]
+      }) => unwrap(api.issues[":ref"].$patch({ param: { ref }, json })),
+      onMutate: ({ ref, ...patch }) =>
+        optimistic(ref, {
+          board: (b) => updateCard(b, ref, (c) => ({ ...c, title: patch.title ?? c.title })),
+          issue: (i) => ({ ...i, ...patch }),
+        }),
+      onError: (_e, { ref }, snapshot) => rollback(ref, snapshot),
+      onSettled: (_d, _e, { ref }) => refresh(ref),
+    }),
+    comment: useMutation({
+      mutationFn: ({ ref, body }: { ref: string; body: string }) =>
+        unwrap(api.issues[":ref"].comments.$post({ param: { ref }, json: { body } })),
+      onMutate: ({ ref, body }) => {
+        const me = queryClient.getQueryData<{ id: number; name: string }>(["me"])
+        return optimistic(ref, {
+          issue: (i) => ({
+            ...i,
+            comments: [
+              ...i.comments,
+              {
+                id: tempId--,
+                issueId: i.id,
+                authorId: me?.id ?? null,
+                body,
+                createdAt: new Date().toISOString(),
+                author: me ? { id: me.id, name: me.name } : null,
+              },
+            ],
+          }),
+        })
+      },
+      onError: (_e, { ref }, snapshot) => rollback(ref, snapshot),
+      onSettled: (_d, _e, { ref }) => refresh(ref),
+    }),
     setWipLimits: useMutation({
       mutationFn: (wipLimits: { in_progress?: number | null; review?: number | null }) =>
         unwrap(api.projects[":key"].$patch({ param: { key }, json: { wipLimits } })),

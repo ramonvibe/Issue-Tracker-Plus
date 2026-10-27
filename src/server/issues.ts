@@ -28,12 +28,24 @@ export const criterionInput = z.object({
   testRef: z.string().trim().max(300).nullish(),
 })
 export const criterionPatch = criterionInput.partial().extend({ checked: z.boolean().optional() })
+const title = z.string().trim().min(1, "Informe o título").max(240)
+const description = z.string().max(20_000)
+const contextFiles = z
+  .array(z.string().trim().max(500))
+  .max(100)
+  .transform((files) => files.filter(Boolean))
 export const issueInput = z.object({
-  title: z.string().trim().min(1, "Informe o título").max(240),
-  description: z.string().max(20_000).default(""),
-  contextFiles: z.array(z.string().trim().min(1).max(500)).max(100).default([]),
+  title,
+  description: description.default(""),
+  contextFiles: contextFiles.default([]),
   criteria: z.array(criterionInput).max(50).default([]),
 })
+export const issuePatch = z.object({
+  title: title.optional(),
+  description: description.optional(),
+  contextFiles: contextFiles.optional(),
+})
+export const commentInput = z.object({ body: z.string().trim().min(1, "Escreva o comentário").max(10_000) })
 export const moveInput = z.object({
   status: z.enum(STATUSES),
   // Refs of the cards that end up right above (`after`) and right below (`before`) the moved one.
@@ -94,14 +106,48 @@ export function createIssue(db: DB, key: string, input: z.infer<typeof issueInpu
   })
 }
 
+// Two queries: resolve the ref, then one relational query that aggregates criteria, comments and events.
 export async function getIssue(db: DB, reference: string) {
+  const { id, ref } = await findIssue(db, reference)
+  const named = { columns: { id: true, name: true } } as const
+  const issue = await db.query.issues.findFirst({
+    where: eq(issues.id, id),
+    with: {
+      criteria: { orderBy: (c, { asc }) => [asc(c.id)] },
+      comments: { orderBy: (c, { asc }) => [asc(c.id)], with: { author: named } },
+      events: { orderBy: (e, { asc }) => [asc(e.id)], with: { actor: named } },
+    },
+  })
+  if (!issue) throw new AppError(404, "not_found", `Issue ${reference} não encontrada`)
+  return { ...issue, ref }
+}
+
+export function updateIssue(db: DB, reference: string, patch: z.infer<typeof issuePatch>, actor: Actor) {
+  return db.transaction(async (tx) => {
+    const issue = await findIssue(tx, reference, true)
+    const changed = (Object.keys(patch) as (keyof typeof patch)[]).filter(
+      (field) => patch[field] !== undefined && JSON.stringify(patch[field]) !== JSON.stringify(issue[field]),
+    )
+    if (!changed.length) return issue
+    const [updated] = await tx
+      .update(issues)
+      .set({ ...Object.fromEntries(changed.map((f) => [f, patch[f]])), updatedAt: sql`now()` })
+      .where(eq(issues.id, issue.id))
+      .returning()
+    await logEvent(tx, issue.id, actor, "edited", { fields: changed })
+    return { ...(updated as typeof issues.$inferSelect), ref: issue.ref }
+  })
+}
+
+export async function addComment(db: DB, reference: string, body: string, actor: Actor) {
+  const parsed = commentInput.safeParse({ body })
+  if (!parsed.success) throw new AppError(422, "validation", "Escreva o comentário")
   const issue = await findIssue(db, reference)
-  const criteria = await db
-    .select()
-    .from(acceptanceCriteria)
-    .where(eq(acceptanceCriteria.issueId, issue.id))
-    .orderBy(asc(acceptanceCriteria.id))
-  return { ...issue, criteria }
+  const [comment] = await db
+    .insert(comments)
+    .values({ issueId: issue.id, authorId: actor.userId, body: parsed.data.body })
+    .returning()
+  return comment as typeof comments.$inferSelect
 }
 
 export async function board(db: DB, key: string) {

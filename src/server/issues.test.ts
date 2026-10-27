@@ -1,17 +1,22 @@
 import { eq, sql } from "drizzle-orm"
+import { drizzle } from "drizzle-orm/postgres-js"
 import { beforeEach, describe, expect, test } from "vitest"
 import { createUser } from "./auth.ts"
 import {
+  addComment,
   addCriterion,
   board,
   createIssue,
   deleteCriterion,
   getIssue,
   issueInput,
+  issuePatch,
   moveIssue,
   updateCriterion,
+  updateIssue,
 } from "./issues.ts"
 import { createProject, updateProject } from "./projects.ts"
+import * as schema from "./schema.ts"
 import { comments, issueEvents } from "./schema.ts"
 import { db } from "./test/db.ts"
 
@@ -251,5 +256,42 @@ describe("wip limits", () => {
     })
     await fill(5, "review")
     expect(await columnRefs("review")).toHaveLength(5)
+  })
+})
+
+describe("issue panel", () => {
+  test("edits fields and logs which ones changed", async () => {
+    await create("Antigo")
+    const updated = await updateIssue(
+      db,
+      "PLAT-1",
+      issuePatch.parse({ title: " Novo ", description: "## Problema", contextFiles: ["src/a.ts", " "] }),
+      actor,
+    )
+    expect(updated).toMatchObject({ title: "Novo", description: "## Problema", contextFiles: ["src/a.ts"] })
+    expect((await events("PLAT-1")).at(-1)).toMatchObject({
+      kind: "edited",
+      data: { fields: ["title", "description", "contextFiles"] },
+    })
+    expect(issuePatch.safeParse({ title: "" }).success).toBe(false)
+  })
+
+  test("detail brings criteria, comments and events with names, in at most 3 queries", async () => {
+    await create("Com histórico", ["Um"])
+    await addComment(db, "PLAT-1", "Primeiro **comentário**", actor)
+    await moveIssue(db, "PLAT-1", { status: "ready" }, actor)
+    let queries = 0
+    const counted = drizzle(db.$client, { schema, logger: { logQuery: () => queries++ } })
+    const issue = await getIssue(counted, "PLAT-1")
+    expect(queries).toBeLessThanOrEqual(3)
+    expect(issue.criteria).toMatchObject([{ text: "Um" }])
+    expect(issue.comments).toMatchObject([{ body: "Primeiro **comentário**", author: { name: "Ana" } }])
+    expect(issue.events.map((e) => e.kind)).toEqual(["created", "moved"])
+    expect(issue.events[1]).toMatchObject({ actor: { name: "Ana" }, data: { from: "idea", to: "ready" } })
+  })
+
+  test("comments must have content", async () => {
+    await create("Comentável")
+    await expect(addComment(db, "PLAT-1", "   ", actor)).rejects.toMatchObject({ status: 422 })
   })
 })
