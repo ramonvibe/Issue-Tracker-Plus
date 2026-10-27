@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test"
 
-const admin = { name: "Ana", email: "ana@example.com", password: "senha-segura-123" }
+import { admin } from "./helpers.ts"
 
 test.describe
   .serial("skeleton", () => {

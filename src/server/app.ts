@@ -21,7 +21,20 @@ import {
 } from "./auth.ts"
 import type { DB } from "./db.ts"
 import { AppError } from "./errors.ts"
-import { createProject, getProject, listProjects, projectInput } from "./projects.ts"
+import {
+  addCriterion,
+  board,
+  createIssue,
+  criterionInput,
+  criterionPatch,
+  deleteCriterion,
+  getIssue,
+  issueInput,
+  moveInput,
+  moveIssue,
+  updateCriterion,
+} from "./issues.ts"
+import { createProject, listProjects, projectInput } from "./projects.ts"
 
 export type AppConfig = {
   db: DB
@@ -31,6 +44,13 @@ export type AppConfig = {
 }
 
 type Env = { Variables: { user: SessionUser } }
+
+const actor = (c: Context<Env>) => ({ userId: c.get("user").id })
+const criterionId = (c: Context) => {
+  const id = Number(c.req.param("id"))
+  if (!Number.isSafeInteger(id) || id < 1) throw new AppError(404, "not_found", "Critério não encontrado")
+  return id
+}
 
 const CSP =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
@@ -122,14 +142,23 @@ export function createApp({ db, secureCookies, staticDir }: AppConfig) {
     .post("/projects", json(projectInput), async (c) =>
       c.json(await createProject(db, c.req.valid("json")), 201),
     )
-    .get("/projects/:key/board", async (c) => {
-      const project = await getProject(db, c.req.param("key"))
-      // Issues arrive in increment 2; the shape is fixed now so the UI can render the columns.
-      const columns: Record<
-        "idea" | "ready" | "in_progress" | "review" | "done",
-        { ref: string; title: string }[]
-      > = { idea: [], ready: [], in_progress: [], review: [], done: [] }
-      return c.json({ project, columns })
+    .get("/projects/:key/board", async (c) => c.json(await board(db, c.req.param("key"))))
+    .post("/projects/:key/issues", json(issueInput), async (c) =>
+      c.json(await createIssue(db, c.req.param("key"), c.req.valid("json"), actor(c)), 201),
+    )
+    .get("/issues/:ref", async (c) => c.json(await getIssue(db, c.req.param("ref"))))
+    .post("/issues/:ref/move", json(moveInput), async (c) =>
+      c.json(await moveIssue(db, c.req.param("ref"), c.req.valid("json"), actor(c))),
+    )
+    .post("/issues/:ref/criteria", json(criterionInput), async (c) =>
+      c.json(await addCriterion(db, c.req.param("ref"), c.req.valid("json"), actor(c)), 201),
+    )
+    .patch("/issues/:ref/criteria/:id", json(criterionPatch), async (c) =>
+      c.json(await updateCriterion(db, c.req.param("ref"), criterionId(c), c.req.valid("json"), actor(c))),
+    )
+    .delete("/issues/:ref/criteria/:id", async (c) => {
+      await deleteCriterion(db, c.req.param("ref"), criterionId(c), actor(c))
+      return c.body(null, 204)
     })
 
   const app = new Hono()

@@ -13,7 +13,7 @@ const root = createRootRoute({ component: Outlet })
 const login = createRoute({ getParentRoute: () => root, path: "/login", component: LoginPage })
 const authed = createRoute({ getParentRoute: () => root, id: "authed", component: AuthedLayout })
 const projects = createRoute({ getParentRoute: () => authed, path: "/", component: ProjectsPage })
-export const boardRoute = createRoute({ getParentRoute: () => authed, path: "$key", component: BoardPage })
+export const boardRoute = createRoute({ getParentRoute: () => authed, path: "$ref", component: BoardPage })
 
 const router = createRouter({
   routeTree: root.addChildren([login, authed.addChildren([projects, boardRoute])]),

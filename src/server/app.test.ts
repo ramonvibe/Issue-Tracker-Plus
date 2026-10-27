@@ -102,4 +102,39 @@ describe("http", () => {
     })
     expect((await request("GET", "/api/projects/NOPE/board")).status).toBe(404)
   })
+
+  test("issues through the API: create, criteria, move with documented error codes", async () => {
+    const { request } = client()
+    await request("POST", "/api/setup", admin)
+    await request("POST", "/api/projects", { key: "PLAT", name: "Plataforma" })
+
+    const created = await request("POST", "/api/projects/PLAT/issues", { title: "Capturada" })
+    expect(created.status).toBe(201)
+    expect(await created.json()).toMatchObject({ ref: "PLAT-1", status: "idea" })
+
+    const skip = await request("POST", "/api/issues/PLAT-1/move", { status: "ready" })
+    expect(skip.status).toBe(422)
+    expect(await skip.json()).toMatchObject({ error: { code: "criteria_required" } })
+
+    const criterion = await request("POST", "/api/issues/PLAT-1/criteria", { text: "Responde 200" })
+    expect(criterion.status).toBe(201)
+    const { id } = (await criterion.json()) as { id: number }
+    expect((await request("POST", "/api/issues/PLAT-1/move", { status: "review" })).status).toBe(200)
+    const reject = await request("POST", "/api/issues/PLAT-1/move", { status: "in_progress" })
+    expect(reject.status).toBe(422)
+    expect(await reject.json()).toMatchObject({ error: { code: "note_required" } })
+
+    expect((await request("PATCH", `/api/issues/PLAT-1/criteria/${id}`, { checked: true })).status).toBe(200)
+    expect((await request("POST", "/api/issues/PLAT-1/move", { status: "done" })).status).toBe(200)
+    expect(await (await request("GET", "/api/issues/PLAT-1")).json()).toMatchObject({
+      ref: "PLAT-1",
+      status: "done",
+      criteria: [{ text: "Responde 200", checked: true }],
+    })
+    expect(await (await request("GET", "/api/projects/PLAT/board")).json()).toMatchObject({
+      columns: { done: [{ ref: "PLAT-1", criteriaTotal: 1, criteriaChecked: 1 }] },
+    })
+    expect((await request("DELETE", `/api/issues/PLAT-1/criteria/${id}`)).status).toBe(422)
+    expect((await request("GET", "/api/issues/NOPE-1")).status).toBe(404)
+  })
 })
