@@ -1,0 +1,8 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "files": { "includes": ["**", "!drizzle/meta", "!dist", "!test-results", "!playwright-report"] },
+  "formatter": { "indentStyle": "space", "lineWidth": 110 },
+  "javascript": { "formatter": { "semicolons": "asNeeded" } },
+  "css": { "parser": { "tailwindDirectives": true } },
+  "linter": { "rules": { "preset": "none" } }
+}

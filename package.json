@@ -1,0 +1,46 @@
+{
+  "name": "makeit-fast",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.19.0",
+  "dependencies": {
+    "@hono/node-server": "2.1.5",
+    "@hono/zod-validator": "0.9.1",
+    "@tanstack/react-query": "5.104.2",
+    "@tanstack/react-router": "1.170.44",
+    "drizzle-orm": "0.45.4",
+    "hono": "4.13.13",
+    "postgres": "3.4.9",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@playwright/test": "1.64.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "drizzle-kit": "0.31.11",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.4"
+  },
+  "scripts": {
+    "dev": "pnpm run --parallel \"/^dev:/\"",
+    "dev:server": "node --watch src/server/index.ts",
+    "dev:web": "vite",
+    "build": "vite build",
+    "start": "node src/server/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "lint": "biome check . && tsc",
+    "test": "vitest run",
+    "e2e": "playwright test"
+  }
+}
