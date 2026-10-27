@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, Navigate, Outlet, useNavigate } from "@tanstack/react-router"
 import type { FormEvent } from "react"
 import { ApiError, api, unwrap } from "./api.ts"
-import { Button, ErrorText, Field } from "./ui.tsx"
+import { FlowBackground } from "./flow-background.tsx"
+import { Button, ErrorText, Field, Logo } from "./ui.tsx"
 
 const fields = (e: FormEvent<HTMLFormElement>) =>
   Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>
@@ -29,32 +30,37 @@ export function LoginPage() {
   const needed = setup.data.needed
 
   return (
-    <main className="grid min-h-dvh place-items-center px-4">
-      <form
-        className="grid w-full max-w-sm gap-4 rounded-xl border border-border bg-surface p-6"
-        onSubmit={(e) => {
-          e.preventDefault()
-          submit.mutate(fields(e))
-        }}
-      >
-        <h1 className="text-lg font-semibold">
-          {needed ? "Criar conta de administrador" : "Entrar no Makeit-Fast"}
-        </h1>
-        {needed && <Field label="Nome" name="name" required autoComplete="name" />}
-        <Field label="Email" name="email" type="email" required autoComplete="email" />
-        <Field
-          label="Senha"
-          name="password"
-          type="password"
-          required
-          minLength={needed ? 12 : undefined}
-          autoComplete={needed ? "new-password" : "current-password"}
-        />
-        <ErrorText error={submit.error} />
-        <Button type="submit" disabled={submit.isPending}>
-          {needed ? "Criar e entrar" : "Entrar"}
-        </Button>
-      </form>
+    <main className="relative isolate grid min-h-dvh place-items-center px-4 py-10">
+      <FlowBackground />
+      <div className="grid w-full max-w-sm animate-fade-up gap-6">
+        <div className="grid justify-items-center gap-2 text-center">
+          <Logo />
+          <p className="text-sm text-muted">Você decide e revisa. Os agentes implementam.</p>
+        </div>
+        <form
+          className="grid gap-4 rounded-2xl border border-border bg-surface/85 p-6 shadow-float backdrop-blur-xl"
+          onSubmit={(e) => {
+            e.preventDefault()
+            submit.mutate(fields(e))
+          }}
+        >
+          <h1 className="text-base font-semibold">{needed ? "Criar conta de administrador" : "Entrar"}</h1>
+          {needed && <Field label="Nome" name="name" required autoComplete="name" />}
+          <Field label="Email" name="email" type="email" required autoComplete="email" />
+          <Field
+            label="Senha"
+            name="password"
+            type="password"
+            required
+            minLength={needed ? 12 : undefined}
+            autoComplete={needed ? "new-password" : "current-password"}
+          />
+          <ErrorText error={submit.error} />
+          <Button type="submit" disabled={submit.isPending} className="mt-1 w-full">
+            {needed ? "Criar e entrar" : "Entrar"}
+          </Button>
+        </form>
+      </div>
     </main>
   )
 }
@@ -75,15 +81,21 @@ export function AuthedLayout() {
 
   return (
     <div className="min-h-dvh">
-      <header className="flex items-center justify-between gap-4 border-b border-border bg-surface px-4 py-2">
-        <Link to="/" className="font-semibold">
-          Makeit-Fast
+      <header className="sticky top-0 z-20 flex h-12 items-center justify-between gap-4 border-b border-border bg-surface/80 px-4 backdrop-blur-xl">
+        <Link to="/" className="rounded-md">
+          <Logo />
         </Link>
-        <div className="flex items-center gap-3 text-sm text-muted">
-          <span>{me.data.name}</span>
-          <button type="button" className="hover:text-text" onClick={() => logout.mutate()}>
+        <div className="flex items-center gap-2 text-sm">
+          <span
+            aria-hidden="true"
+            className="grid size-7 place-items-center rounded-full bg-surface-2 text-xs font-semibold text-muted"
+          >
+            {me.data.name.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="hidden text-muted sm:inline">{me.data.name}</span>
+          <Button variant="ghost" className="h-8 px-2.5" onClick={() => logout.mutate()}>
             Sair
-          </button>
+          </Button>
         </div>
       </header>
       <Outlet />

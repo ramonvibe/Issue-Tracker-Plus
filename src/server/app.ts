@@ -34,7 +34,7 @@ import {
   moveIssue,
   updateCriterion,
 } from "./issues.ts"
-import { createProject, listProjects, projectInput } from "./projects.ts"
+import { createProject, listProjects, projectInput, projectPatch, updateProject } from "./projects.ts"
 
 export type AppConfig = {
   db: DB
@@ -141,6 +141,9 @@ export function createApp({ db, secureCookies, staticDir }: AppConfig) {
     .get("/projects", async (c) => c.json(await listProjects(db)))
     .post("/projects", json(projectInput), async (c) =>
       c.json(await createProject(db, c.req.valid("json")), 201),
+    )
+    .patch("/projects/:key", json(projectPatch), async (c) =>
+      c.json(await updateProject(db, c.req.param("key"), c.req.valid("json"))),
     )
     .get("/projects/:key/board", async (c) => c.json(await board(db, c.req.param("key"))))
     .post("/projects/:key/issues", json(issueInput), async (c) =>

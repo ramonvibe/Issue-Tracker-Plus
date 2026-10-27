@@ -137,4 +137,23 @@ describe("http", () => {
     expect((await request("DELETE", `/api/issues/PLAT-1/criteria/${id}`)).status).toBe(422)
     expect((await request("GET", "/api/issues/NOPE-1")).status).toBe(404)
   })
+
+  test("WIP limits: PATCH the project, then a full column answers 409 wip_limit", async () => {
+    const { request } = client()
+    await request("POST", "/api/setup", admin)
+    await request("POST", "/api/projects", { key: "PLAT", name: "Plataforma" })
+    const patched = await request("PATCH", "/api/projects/PLAT", { wipLimits: { review: 1 } })
+    expect(await patched.json()).toMatchObject({ wipLimits: { in_progress: 3, review: 1 } })
+    expect((await request("PATCH", "/api/projects/PLAT", { wipLimits: { review: 0 } })).status).toBe(422)
+
+    for (const title of ["A", "B"]) {
+      await request("POST", "/api/projects/PLAT/issues", { title, criteria: [{ text: "ok" }] })
+    }
+    expect((await request("POST", "/api/issues/PLAT-1/move", { status: "review" })).status).toBe(200)
+    const full = await request("POST", "/api/issues/PLAT-2/move", { status: "review" })
+    expect(full.status).toBe(409)
+    expect(await full.json()).toEqual({
+      error: { code: "wip_limit", message: expect.stringContaining("1/1") },
+    })
+  })
 })

@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, lt, max, min, ne, type SQL, sql } from "drizzle-orm"
+import { and, asc, eq, gt, inArray, lt, max, min, ne, type SQL, sql } from "drizzle-orm"
 import { generateKeyBetween } from "fractional-indexing"
 import { z } from "zod"
 import type { DB, Tx } from "./db.ts"
@@ -12,6 +12,7 @@ import {
   projects,
   STATUSES,
   type Status,
+  type WipLimits,
 } from "./schema.ts"
 
 export type Actor = { userId: number }
@@ -171,12 +172,42 @@ async function positionIn(
   }
 }
 
+const LABEL: Record<Status, string> = {
+  idea: "Ideia",
+  ready: "Pronta",
+  in_progress: "Em execução",
+  review: "Revisão",
+  done: "Concluída",
+  discarded: "Descartada",
+}
+
+async function checkWip(tx: Tx, projectId: number, limits: WipLimits, to: Status) {
+  const rows = await tx
+    .select({ status: issues.status, n: sql<number>`count(*)::int` })
+    .from(issues)
+    .where(and(eq(issues.projectId, projectId), inArray(issues.status, ["in_progress", "review"])))
+    .groupBy(issues.status)
+  const count = (status: Status) => rows.find((r) => r.status === status)?.n ?? 0
+  const limit = limits[to as keyof WipLimits]
+  if (limit !== undefined && count(to) >= limit) {
+    throw new AppError(409, "wip_limit", `${LABEL[to]} está no limite de WIP (${count(to)}/${limit})`)
+  }
+  // Agents parallelize, reviewers do not: a full Revisão stops new work from starting.
+  if (to === "in_progress" && limits.review !== undefined && count("review") >= limits.review) {
+    throw new AppError(
+      409,
+      "wip_limit",
+      `Revisão está cheia (${count("review")}/${limits.review}): revise antes de puxar mais trabalho`,
+    )
+  }
+}
+
 export function moveIssue(db: DB, reference: string, input: z.infer<typeof moveInput>, actor: Actor) {
   return db.transaction(async (tx) => {
     const current = await findIssue(tx, reference)
     // Lock the project first, then the issue: moves in one project are serialized (positions, WIP counts).
-    await tx
-      .select({ id: projects.id })
+    const [project] = await tx
+      .select({ wipLimits: projects.wipLimits })
       .from(projects)
       .where(eq(projects.id, current.projectId))
       .for("update")
@@ -209,6 +240,11 @@ export function moveIssue(db: DB, reference: string, input: z.infer<typeof moveI
           .returning({ id: comments.id })
         await logEvent(tx, issue.id, actor, "rejected", { note, commentId: comment?.id })
       }
+    }
+
+    // Rejection sends work back without pulling anything new, so it is never blocked by WIP.
+    if (from !== to && !(from === "review" && to === "in_progress")) {
+      await checkWip(tx, issue.projectId, project?.wipLimits ?? {}, to)
     }
 
     const position = keepPosition

@@ -11,7 +11,7 @@ import {
   moveIssue,
   updateCriterion,
 } from "./issues.ts"
-import { createProject } from "./projects.ts"
+import { createProject, updateProject } from "./projects.ts"
 import { comments, issueEvents } from "./schema.ts"
 import { db } from "./test/db.ts"
 
@@ -202,5 +202,54 @@ describe("criteria", () => {
         status: 404,
       },
     )
+  })
+})
+
+describe("wip limits", () => {
+  const fill = async (n: number, status: "in_progress" | "review") => {
+    for (let i = 0; i < n; i++) {
+      const issue = await create(`${status} ${i}`, ["ok"])
+      await moveIssue(db, issue.ref, { status }, actor)
+    }
+  }
+
+  test("a full column refuses new cards with 409 wip_limit but allows reordering inside it", async () => {
+    await fill(2, "review")
+    const extra = await create("Extra", ["ok"])
+    await expect(moveIssue(db, extra.ref, { status: "review" }, actor)).rejects.toMatchObject({
+      status: 409,
+      code: "wip_limit",
+    })
+    await moveIssue(db, "PLAT-2", { status: "review", before: "PLAT-1" }, actor)
+    expect(await columnRefs("review")).toEqual(["PLAT-2", "PLAT-1"])
+  })
+
+  test("a full Revisão blocks pulling more work into Em execução", async () => {
+    await fill(2, "review")
+    const next = await create("Próxima", ["ok"])
+    await moveIssue(db, next.ref, { status: "ready" }, actor)
+    await expect(moveIssue(db, next.ref, { status: "in_progress" }, actor)).rejects.toMatchObject({
+      status: 409,
+      code: "wip_limit",
+      message: expect.stringContaining("Revisão"),
+    })
+  })
+
+  test("rejecting from Revisão is never blocked, even with Em execução full", async () => {
+    await fill(3, "in_progress")
+    await fill(1, "review")
+    await moveIssue(db, "PLAT-4", { status: "in_progress", note: "Refazer" }, actor)
+    expect(await columnRefs("in_progress")).toHaveLength(4)
+  })
+
+  test("limits are configurable per project and can be removed", async () => {
+    await updateProject(db, "PLAT", { wipLimits: { in_progress: 1, review: null } })
+    await fill(1, "in_progress")
+    const second = await create("Segunda", ["ok"])
+    await expect(moveIssue(db, second.ref, { status: "in_progress" }, actor)).rejects.toMatchObject({
+      code: "wip_limit",
+    })
+    await fill(5, "review")
+    expect(await columnRefs("review")).toHaveLength(5)
   })
 })
