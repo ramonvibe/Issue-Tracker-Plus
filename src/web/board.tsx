@@ -17,6 +17,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { flushSync } from "react-dom"
 import { api, unwrap } from "./api.ts"
 import { type Board, type Card, moveCard } from "./board-cache.ts"
+import { copyContext } from "./clipboard.ts"
 import { IssuePanel } from "./issue-panel.tsx"
 import {
   type BoardStatus,
@@ -26,7 +27,7 @@ import {
   type Status,
   useIssueMutations,
 } from "./issues.ts"
-import { Button, ErrorText, inputClass, Toast, textareaClass } from "./ui.tsx"
+import { Button, ErrorText, inputClass, Toast, type ToastMessage, textareaClass } from "./ui.tsx"
 
 type Columns = Board["columns"]
 type Placement = { after?: string; before?: string }
@@ -52,14 +53,20 @@ export function BoardPage() {
   const mutations = useIssueMutations(key)
   const [capturing, setCapturing] = useState(false)
   const [message, setMessage] = useState("")
-  const [error, setError] = useState<Error | null>(null)
+  const [toast, setToast] = useState<ToastMessage | null>(null)
+  const setError = (e: Error | null) => setToast(e && { text: e.message, tone: "error" })
   const [rejecting, setRejecting] = useState<({ ref: string } & Placement) | null>(null)
   const [drag, setDrag] = useState<{ ref: string; columns: Columns } | null>(null)
   // Card to focus once it shows up in the given column (moves re-mount cards in their new column).
   const focusAfterRender = useRef<{ ref: string; status?: Status } | null>(null)
   const justDragged = useRef(false)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
-  const dismissError = useCallback(() => setError(null), [])
+  const dismissToast = useCallback(() => setToast(null), [])
+  const copy = (ref: string) =>
+    copyContext(ref).then(
+      () => setToast({ text: `Contexto de ${ref} copiado`, tone: "ok" }),
+      (e: Error) => setToast({ text: `Falha ao copiar: ${e.message}`, tone: "error" }),
+    )
 
   const columns = board.data?.columns
 
@@ -112,7 +119,10 @@ export function BoardPage() {
       const columnKey =
         { h: col - 1, l: col + 1 }[e.key] ?? (/^[1-5]$/.test(e.key) ? Number(e.key) - 1 : null)
 
-      if (e.key === "e" && current) {
+      if (e.key === "x" && current) {
+        e.preventDefault()
+        copy(current)
+      } else if (e.key === "e" && current) {
         e.preventDefault()
         navigate({ to: "/$ref", params: { ref: current }, state: { edit: true } })
       } else if (e.key === "c") {
@@ -219,7 +229,8 @@ export function BoardPage() {
             <kbd>c</kbd> nova ideia <span aria-hidden="true">·</span> <kbd>j</kbd>
             <kbd>k</kbd> navegar <span aria-hidden="true">·</span> <kbd>h</kbd>
             <kbd>l</kbd> ou <kbd>1</kbd>–<kbd>5</kbd> mover <span aria-hidden="true">·</span> <kbd>Enter</kbd>{" "}
-            abrir <span aria-hidden="true">·</span> <kbd>e</kbd> editar
+            abrir <span aria-hidden="true">·</span> <kbd>e</kbd> editar <span aria-hidden="true">·</span>{" "}
+            <kbd>x</kbd> contexto
           </p>
           <WipSettings limits={limits} onSave={(l) => mutations.setWipLimits.mutate(l)} />
         </div>
@@ -293,6 +304,7 @@ export function BoardPage() {
           issueRef={issueRef}
           mutations={mutations}
           onMove={(status) => requestMove(issueRef, status)}
+          onCopy={() => copy(issueRef)}
           onClose={() => {
             focusAfterRender.current = { ref: issueRef }
             navigate({ to: "/$ref", params: { ref: key } })
@@ -310,7 +322,7 @@ export function BoardPage() {
           }}
         />
       )}
-      <Toast error={error} onDismiss={dismissError} />
+      <Toast message={toast} onDismiss={dismissToast} />
     </main>
   )
 }

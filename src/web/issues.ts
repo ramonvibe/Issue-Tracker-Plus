@@ -178,6 +178,8 @@ export function useIssueMutations(key: string) {
                 id: tempId--,
                 issueId: i.id,
                 authorId: me?.id ?? null,
+                tokenId: null,
+                token: null,
                 body,
                 createdAt: new Date().toISOString(),
                 author: me ? { id: me.id, name: me.name } : null,
@@ -186,6 +188,16 @@ export function useIssueMutations(key: string) {
           }),
         })
       },
+      onError: (_e, { ref }, snapshot) => rollback(ref, snapshot),
+      onSettled: (_d, _e, { ref }) => refresh(ref),
+    }),
+    linkPr: useMutation({
+      mutationFn: ({ ref, ...json }: { ref: string; branch?: string; prUrl?: string }) =>
+        unwrap(api.issues[":ref"].pr.$put({ param: { ref }, json })),
+      onMutate: ({ ref, branch, prUrl }) =>
+        optimistic(ref, {
+          issue: (i) => ({ ...i, branch: branch ?? i.branch, prUrl: prUrl ?? i.prUrl }),
+        }),
       onError: (_e, { ref }, snapshot) => rollback(ref, snapshot),
       onSettled: (_d, _e, { ref }) => refresh(ref),
     }),

@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client"
 import { BoardPage } from "./board.tsx"
 import { AuthedLayout, LoginPage } from "./login.tsx"
 import { ProjectsPage } from "./projects.tsx"
+import { TokensPage } from "./tokens.tsx"
 import "./styles.css"
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 10_000 } } })
@@ -13,10 +14,11 @@ const root = createRootRoute({ component: Outlet })
 const login = createRoute({ getParentRoute: () => root, path: "/login", component: LoginPage })
 const authed = createRoute({ getParentRoute: () => root, id: "authed", component: AuthedLayout })
 const projects = createRoute({ getParentRoute: () => authed, path: "/", component: ProjectsPage })
+const tokens = createRoute({ getParentRoute: () => authed, path: "/tokens", component: TokensPage })
 export const boardRoute = createRoute({ getParentRoute: () => authed, path: "$ref", component: BoardPage })
 
 const router = createRouter({
-  routeTree: root.addChildren([login, authed.addChildren([projects, boardRoute])]),
+  routeTree: root.addChildren([login, authed.addChildren([projects, tokens, boardRoute])]),
 })
 
 declare module "@tanstack/react-router" {

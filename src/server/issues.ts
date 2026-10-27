@@ -15,7 +15,8 @@ import {
   type WipLimits,
 } from "./schema.ts"
 
-export type Actor = { userId: number }
+// A person (session) or an agent (API token). Agents leave userId empty, as the data model asks.
+export type Actor = { userId?: number; tokenId?: number }
 export type BoardStatus = Exclude<Status, "discarded">
 
 const REF = /^([A-Z][A-Z0-9]{1,9})-([1-9][0-9]{0,8})$/
@@ -71,7 +72,9 @@ async function findIssue(db: DB | Tx, reference: string, lock = false) {
 }
 
 const logEvent = (tx: Tx, issueId: number, actor: Actor, kind: string, data: Record<string, unknown> = {}) =>
-  tx.insert(issueEvents).values({ issueId, actorId: actor.userId, kind, data })
+  tx
+    .insert(issueEvents)
+    .values({ issueId, actorId: actor.userId ?? null, tokenId: actor.tokenId ?? null, kind, data })
 
 export function createIssue(db: DB, key: string, input: z.infer<typeof issueInput>, actor: Actor) {
   return db.transaction(async (tx) => {
@@ -114,8 +117,8 @@ export async function getIssue(db: DB, reference: string) {
     where: eq(issues.id, id),
     with: {
       criteria: { orderBy: (c, { asc }) => [asc(c.id)] },
-      comments: { orderBy: (c, { asc }) => [asc(c.id)], with: { author: named } },
-      events: { orderBy: (e, { asc }) => [asc(e.id)], with: { actor: named } },
+      comments: { orderBy: (c, { asc }) => [asc(c.id)], with: { author: named, token: named } },
+      events: { orderBy: (e, { asc }) => [asc(e.id)], with: { actor: named, token: named } },
     },
   })
   if (!issue) throw new AppError(404, "not_found", `Issue ${reference} não encontrada`)
@@ -145,7 +148,12 @@ export async function addComment(db: DB, reference: string, body: string, actor:
   const issue = await findIssue(db, reference)
   const [comment] = await db
     .insert(comments)
-    .values({ issueId: issue.id, authorId: actor.userId, body: parsed.data.body })
+    .values({
+      issueId: issue.id,
+      authorId: actor.userId ?? null,
+      tokenId: actor.tokenId ?? null,
+      body: parsed.data.body,
+    })
     .returning()
   return comment as typeof comments.$inferSelect
 }
@@ -282,7 +290,12 @@ export function moveIssue(db: DB, reference: string, input: z.infer<typeof moveI
         if (!note) throw new AppError(422, "note_required", "Explique o que faltou para devolver a issue")
         const [comment] = await tx
           .insert(comments)
-          .values({ issueId: issue.id, authorId: actor.userId, body: note })
+          .values({
+            issueId: issue.id,
+            authorId: actor.userId ?? null,
+            tokenId: actor.tokenId ?? null,
+            body: note,
+          })
           .returning({ id: comments.id })
         await logEvent(tx, issue.id, actor, "rejected", { note, commentId: comment?.id })
       }
@@ -362,5 +375,40 @@ export function deleteCriterion(db: DB, reference: string, id: number, actor: Ac
     }
     await tx.delete(acceptanceCriteria).where(eq(acceptanceCriteria.id, id))
     await logEvent(tx, issue.id, actor, "criteria_changed", { action: "removed", id })
+  })
+}
+
+const branch = z
+  .string()
+  .trim()
+  .max(200)
+  .regex(/^[\w./-]+$/, "Nome de branch inválido")
+const prUrl = z.url({ protocol: /^https?$/, error: "URL do PR inválida" }).max(500)
+// Accepts the documented snake_case `pr_url` as well as camelCase `prUrl`.
+export const prInput = z
+  .object({ branch: branch.optional(), pr_url: prUrl.optional(), prUrl: prUrl.optional() })
+  .transform(({ branch, pr_url, prUrl }) => ({ branch, prUrl: prUrl ?? pr_url }))
+  .refine((v) => v.branch || v.prUrl, "Informe a branch ou a URL do PR")
+
+export function linkPr(db: DB, reference: string, input: z.infer<typeof prInput>, actor: Actor) {
+  return db.transaction(async (tx) => {
+    const issue = await findIssue(tx, reference, true)
+    const number = input.prUrl ? Number(/\/pull\/(\d+)/.exec(input.prUrl)?.[1]) || null : undefined
+    const [updated] = await tx
+      .update(issues)
+      .set({
+        ...(input.branch && { branch: input.branch }),
+        ...(input.prUrl && { prUrl: input.prUrl, prNumber: number, prState: issue.prState ?? "open" }),
+        updatedAt: sql`now()`,
+      })
+      .where(eq(issues.id, issue.id))
+      .returning({
+        branch: issues.branch,
+        prUrl: issues.prUrl,
+        prNumber: issues.prNumber,
+        prState: issues.prState,
+      })
+    await logEvent(tx, issue.id, actor, "pr_linked", { branch: input.branch, prUrl: input.prUrl })
+    return { ref: issue.ref, ...(updated as NonNullable<typeof updated>) }
   })
 }

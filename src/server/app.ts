@@ -19,6 +19,7 @@ import {
   setupNeeded,
   userInput,
 } from "./auth.ts"
+import { issueContext } from "./context.ts"
 import type { DB } from "./db.ts"
 import { AppError } from "./errors.ts"
 import {
@@ -33,23 +34,31 @@ import {
   getIssue,
   issueInput,
   issuePatch,
+  linkPr,
   moveInput,
   moveIssue,
+  prInput,
   updateCriterion,
   updateIssue,
 } from "./issues.ts"
 import { createProject, listProjects, projectInput, projectPatch, updateProject } from "./projects.ts"
+import { createToken, listTokens, revokeToken, tokenInput, tokenUser } from "./tokens.ts"
 
 export type AppConfig = {
   db: DB
+  // Public URL, used in the exported agent context.
+  baseUrl?: string
   // True when served over HTTPS: Secure + SameSite=None cookies, required inside the hub.cds.com.br iframe.
   secureCookies: boolean
   staticDir?: string
 }
 
-type Env = { Variables: { user: SessionUser } }
+type Env = { Variables: { user: SessionUser; tokenId?: number } }
 
-const actor = (c: Context<Env>) => ({ userId: c.get("user").id })
+const actor = (c: Context<Env>) => {
+  const tokenId = c.get("tokenId")
+  return tokenId ? { tokenId } : { userId: c.get("user").id }
+}
 const criterionId = (c: Context) => {
   const id = Number(c.req.param("id"))
   if (!Number.isSafeInteger(id) || id < 1) throw new AppError(404, "not_found", "Critério não encontrado")
@@ -70,7 +79,7 @@ const json = <T extends z.ZodType>(schema: T) =>
     }
   })
 
-export function createApp({ db, secureCookies, staticDir }: AppConfig) {
+export function createApp({ db, secureCookies, staticDir, baseUrl }: AppConfig) {
   const cookieName = secureCookies ? "__Host-mf_session" : "mf_session"
   const failures = new Map<string, { count: number; resetAt: number }>()
 
@@ -111,11 +120,25 @@ export function createApp({ db, secureCookies, staticDir }: AppConfig) {
     }
   }
 
+  // Browsers authenticate with the session cookie, agents with `Authorization: Bearer <api token>`.
   const requireUser: MiddlewareHandler<Env> = async (c, next) => {
-    const token = getCookie(c, cookieName)
-    const user = token ? await sessionUser(db, token) : null
-    if (!user) throw new AppError(401, "unauthorized", "Faça login para continuar")
-    c.set("user", user)
+    const bearer = /^Bearer (.+)$/.exec(c.req.header("authorization") ?? "")?.[1]
+    if (bearer) {
+      const found = await tokenUser(db, bearer)
+      if (!found) throw new AppError(401, "unauthorized", "Token de API inválido ou revogado")
+      c.set("user", found.user)
+      c.set("tokenId", found.tokenId)
+    } else {
+      const token = getCookie(c, cookieName)
+      const user = token ? await sessionUser(db, token) : null
+      if (!user) throw new AppError(401, "unauthorized", "Faça login para continuar")
+      c.set("user", user)
+    }
+    await next()
+  }
+  // A leaked agent token must not be able to mint more tokens.
+  const sessionOnly: MiddlewareHandler<Env> = async (c, next) => {
+    if (c.get("tokenId")) throw new AppError(403, "forbidden", "Tokens de API não gerenciam tokens")
     await next()
   }
 
@@ -142,6 +165,14 @@ export function createApp({ db, secureCookies, staticDir }: AppConfig) {
       if (c.get("user").role !== "admin") throw new AppError(403, "forbidden", "Apenas administradores")
       return c.json(await createUser(db, c.req.valid("json")), 201)
     })
+    .get("/tokens", sessionOnly, async (c) => c.json(await listTokens(db, c.get("user").id)))
+    .post("/tokens", sessionOnly, json(tokenInput), async (c) =>
+      c.json(await createToken(db, c.get("user").id, c.req.valid("json").name), 201),
+    )
+    .delete("/tokens/:id", sessionOnly, async (c) => {
+      await revokeToken(db, c.get("user").id, Number(c.req.param("id")) || 0)
+      return c.body(null, 204)
+    })
     .get("/projects", async (c) => c.json(await listProjects(db)))
     .post("/projects", json(projectInput), async (c) =>
       c.json(await createProject(db, c.req.valid("json")), 201),
@@ -156,6 +187,14 @@ export function createApp({ db, secureCookies, staticDir }: AppConfig) {
     .get("/issues/:ref", async (c) => c.json(await getIssue(db, c.req.param("ref"))))
     .patch("/issues/:ref", json(issuePatch), async (c) =>
       c.json(await updateIssue(db, c.req.param("ref"), c.req.valid("json"), actor(c))),
+    )
+    .get("/issues/:ref/context", async (c) => {
+      const issue = await getIssue(db, c.req.param("ref"))
+      c.header("Content-Type", "text/markdown; charset=utf-8")
+      return c.body(issueContext(issue, baseUrl ?? new URL(c.req.url).origin))
+    })
+    .put("/issues/:ref/pr", json(prInput), async (c) =>
+      c.json(await linkPr(db, c.req.param("ref"), c.req.valid("json"), actor(c))),
     )
     .post("/issues/:ref/comments", json(commentInput), async (c) =>
       c.json(await addComment(db, c.req.param("ref"), c.req.valid("json").body, actor(c)), 201),

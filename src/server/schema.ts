@@ -44,6 +44,22 @@ export const sessions = pgTable("sessions", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 })
 
+export const apiTokens = pgTable("api_tokens", {
+  id: id(),
+  userId: bigint("user_id", { mode: "number" })
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  // SHA-256 hex of the bearer token; the token itself is shown once and never stored.
+  tokenHash: text("token_hash").notNull().unique(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: createdAt(),
+})
+
+const tokenRef = () =>
+  bigint("token_id", { mode: "number" }).references(() => apiTokens.id, { onDelete: "set null" })
+
 export type WipLimits = Partial<Record<"in_progress" | "review", number>>
 
 export const projects = pgTable(
@@ -126,7 +142,9 @@ export const comments = pgTable(
     issueId: bigint("issue_id", { mode: "number" })
       .notNull()
       .references(() => issues.id, { onDelete: "cascade" }),
+    // Null when an agent wrote it through an API token; then tokenId says which one.
     authorId: bigint("author_id", { mode: "number" }).references(() => users.id, { onDelete: "set null" }),
+    tokenId: tokenRef(),
     body: text("body").notNull(),
     createdAt: createdAt(),
   },
@@ -144,6 +162,7 @@ export const issueEvents = pgTable(
       .notNull()
       .references(() => issues.id, { onDelete: "cascade" }),
     actorId: bigint("actor_id", { mode: "number" }).references(() => users.id, { onDelete: "set null" }),
+    tokenId: tokenRef(),
     kind: text("kind").notNull(),
     data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
     createdAt: createdAt(),
@@ -162,8 +181,10 @@ export const criteriaRelations = relations(acceptanceCriteria, ({ one }) => ({
 export const commentRelations = relations(comments, ({ one }) => ({
   issue: one(issues, { fields: [comments.issueId], references: [issues.id] }),
   author: one(users, { fields: [comments.authorId], references: [users.id] }),
+  token: one(apiTokens, { fields: [comments.tokenId], references: [apiTokens.id] }),
 }))
 export const eventRelations = relations(issueEvents, ({ one }) => ({
   issue: one(issues, { fields: [issueEvents.issueId], references: [issues.id] }),
   actor: one(users, { fields: [issueEvents.actorId], references: [users.id] }),
+  token: one(apiTokens, { fields: [issueEvents.tokenId], references: [apiTokens.id] }),
 }))

@@ -16,9 +16,10 @@ export function IssuePanel(props: {
   issueRef: string
   mutations: ReturnType<typeof useIssueMutations>
   onMove: (status: Status) => void
+  onCopy: () => void
   onClose: () => void
 }) {
-  const { issueRef: ref, mutations, onClose } = props
+  const { issueRef: ref, mutations, onClose, onCopy } = props
   const issue = useQuery({
     queryKey: ["issue", ref],
     queryFn: () => unwrap(api.issues[":ref"].$get({ param: { ref } })),
@@ -34,15 +35,19 @@ export function IssuePanel(props: {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (document.querySelector("dialog[open]")) return
-      if (e.key === "Escape") onClose()
-      else if (e.key === "e" && !isTyping(e.target) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (e.key === "Escape") return onClose()
+      if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key === "e") {
         e.preventDefault()
         setEditing(true)
+      } else if (e.key === "x") {
+        e.preventDefault()
+        onCopy()
       }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [onClose])
+  }, [onClose, onCopy])
 
   const error = [
     mutations.addCriterion,
@@ -50,6 +55,7 @@ export function IssuePanel(props: {
     mutations.removeCriterion,
     mutations.update,
     mutations.comment,
+    mutations.linkPr,
   ].find((m) => m.error)?.error
 
   const data = issue.data
@@ -75,6 +81,9 @@ export function IssuePanel(props: {
       <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-6">
         <span className="rounded-md bg-surface-2 px-1.5 py-0.5 font-mono text-xs text-muted">{ref}</span>
         <div className="flex items-center gap-1">
+          <Button variant="ghost" className="h-8 px-2.5" onClick={onCopy}>
+            Copiar contexto <kbd>x</kbd>
+          </Button>
           {!editing && data && (
             <Button variant="ghost" className="h-8 px-2.5" onClick={() => setEditing(true)}>
               Editar <kbd>e</kbd>
@@ -204,6 +213,15 @@ export function IssuePanel(props: {
               />
             </form>
           </Section>
+          <Section title="Branch e PR">
+            <PrForm
+              branch={data.branch}
+              prUrl={data.prUrl}
+              prNumber={data.prNumber}
+              prState={data.prState}
+              onSave={(link) => mutations.linkPr.mutate({ ref, ...link })}
+            />
+          </Section>
           <ErrorText error={error ?? null} />
           <Section title="Atividade">
             <ol className="grid gap-3">
@@ -214,7 +232,7 @@ export function IssuePanel(props: {
                     className="grid animate-fade-up gap-1.5 rounded-xl border border-border bg-surface p-3"
                   >
                     <span className="flex items-baseline gap-2 text-xs text-muted">
-                      <span className="font-medium text-text">{item.comment.author?.name ?? "Agente"}</span>
+                      <span className="font-medium text-text">{who(item.comment)}</span>
                       <time dateTime={item.at} title={fullDate(item.at)}>
                         {ago(item.at)}
                       </time>
@@ -230,7 +248,7 @@ export function IssuePanel(props: {
                       className="size-1.5 shrink-0 translate-y-[-1px] rounded-full bg-border"
                     />
                     <span>
-                      <span className="font-medium text-text">{item.event.actor?.name ?? "Agente"}</span>{" "}
+                      <span className="font-medium text-text">{who(item.event)}</span>{" "}
                       {describeEvent(item.event.kind, item.event.data)}
                     </span>
                     <time className="ml-auto shrink-0" dateTime={item.at} title={fullDate(item.at)}>
@@ -245,6 +263,68 @@ export function IssuePanel(props: {
         </div>
       )}
     </aside>
+  )
+}
+
+// People appear by name; agents by the name of the token they used.
+const who = (x: {
+  author?: { name: string } | null
+  actor?: { name: string } | null
+  token: { name: string } | null
+}) => x.author?.name ?? x.actor?.name ?? (x.token ? `${x.token.name} (agente)` : "Alguém")
+
+function PrForm(props: {
+  branch: string | null
+  prUrl: string | null
+  prNumber: number | null
+  prState: string | null
+  onSave: (link: { branch?: string; prUrl?: string }) => void
+}) {
+  return (
+    <form
+      className="grid gap-2"
+      onSubmit={(e) => {
+        e.preventDefault()
+        const data = new FormData(e.currentTarget)
+        const branch = String(data.get("branch")).trim() || undefined
+        const prUrl = String(data.get("prUrl")).trim() || undefined
+        if (branch || prUrl) props.onSave({ branch, prUrl })
+      }}
+    >
+      {props.prUrl && (
+        <a
+          href={props.prUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:border-accent/40"
+        >
+          <span className="font-medium">PR #{props.prNumber ?? "?"}</span>
+          {props.prState && (
+            <span className="rounded-full bg-surface-2 px-2 py-px text-xs text-muted">{props.prState}</span>
+          )}
+          <span className="ml-auto truncate font-mono text-xs text-muted">{props.branch}</span>
+        </a>
+      )}
+      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+        <input
+          name="branch"
+          aria-label="Branch"
+          placeholder="branch"
+          defaultValue={props.branch ?? ""}
+          className={`${inputClass} font-mono text-xs`}
+        />
+        <input
+          name="prUrl"
+          aria-label="URL do PR"
+          placeholder="https://github.com/…/pull/1"
+          defaultValue={props.prUrl ?? ""}
+          className={inputClass}
+        />
+        <Button type="submit" variant="ghost" className="border border-border">
+          Vincular
+        </Button>
+      </div>
+    </form>
   )
 }
 

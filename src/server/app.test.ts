@@ -176,4 +176,54 @@ describe("http", () => {
       events: [{ kind: "created" }, { kind: "edited", data: { fields: ["title", "contextFiles"] } }],
     })
   })
+
+  test("an agent with a token fetches the context, starts, links the PR and asks for review", async () => {
+    const human = client()
+    await human.request("POST", "/api/setup", admin)
+    await human.request("POST", "/api/projects", { key: "PLAT", name: "Plataforma" })
+    await human.request("POST", "/api/projects/PLAT/issues", {
+      title: "Exportar contexto",
+      criteria: [{ text: "Contém critérios", testRef: "src/server/context.test.ts:formats" }],
+    })
+    await human.request("POST", "/api/issues/PLAT-1/move", { status: "ready" })
+    const created = await human.request("POST", "/api/tokens", { name: "claude-1" })
+    const { token, id } = (await created.json()) as { token: string; id: number }
+
+    const agent = client()
+    const auth = { authorization: `Bearer ${token}` }
+    const context = await agent.request("GET", "/api/issues/PLAT-1/context", undefined, auth)
+    expect(context.headers.get("content-type")).toContain("text/markdown")
+    const markdown = await context.text()
+    expect(markdown).toContain("# PLAT-1: Exportar contexto")
+    expect(markdown).toContain("- [ ] Contém critérios (teste: src/server/context.test.ts:formats)")
+    expect(markdown).toContain("Branch: plat-1-exportar-contexto.")
+
+    expect(
+      (await agent.request("POST", "/api/issues/PLAT-1/move", { status: "in_progress" }, auth)).status,
+    ).toBe(200)
+    const pr = { branch: "plat-1-exportar-contexto", pr_url: "https://github.com/acme/app/pull/7" }
+    expect(await (await agent.request("PUT", "/api/issues/PLAT-1/pr", pr, auth)).json()).toMatchObject({
+      prNumber: 7,
+      prState: "open",
+    })
+    expect((await agent.request("POST", "/api/issues/PLAT-1/move", { status: "review" }, auth)).status).toBe(
+      200,
+    )
+
+    const detail = (await (await human.request("GET", "/api/issues/PLAT-1")).json()) as {
+      status: string
+      events: { kind: string; actorId: number | null; token: { name: string } | null }[]
+    }
+    expect(detail.status).toBe("review")
+    expect(detail.events.slice(-3)).toMatchObject([
+      { kind: "moved", actorId: null, token: { name: "claude-1" } },
+      { kind: "pr_linked", token: { name: "claude-1" } },
+      { kind: "moved", token: { name: "claude-1" } },
+    ])
+
+    // Tokens cannot manage tokens, and a revoked token stops working.
+    expect((await agent.request("POST", "/api/tokens", { name: "x" }, auth)).status).toBe(403)
+    expect((await human.request("DELETE", `/api/tokens/${id}`)).status).toBe(204)
+    expect((await agent.request("GET", "/api/issues/PLAT-1/context", undefined, auth)).status).toBe(401)
+  })
 })

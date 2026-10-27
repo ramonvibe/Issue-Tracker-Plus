@@ -24,6 +24,8 @@ export function describeEvent(kind: string, data: Record<string, unknown>) {
       return "devolveu para Em execução"
     case "criteria_changed":
       return CRITERIA_ACTION[String(data.action)] ?? "alterou os critérios"
+    case "pr_linked":
+      return data.prUrl ? "vinculou o PR" : `vinculou a branch ${String(data.branch)}`
     case "edited":
       return `editou ${((data.fields as string[] | undefined) ?? []).map((f) => FIELD_LABEL[f] ?? f).join(", ")}`
     default:

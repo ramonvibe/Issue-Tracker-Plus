@@ -86,6 +86,12 @@ export function AuthedLayout() {
           <Logo />
         </Link>
         <div className="flex items-center gap-2 text-sm">
+          <Link
+            to="/tokens"
+            className="hidden rounded-md px-2 py-1 text-muted hover:text-text sm:inline [&.active]:text-text"
+          >
+            Tokens de API
+          </Link>
           <span
             aria-hidden="true"
             className="grid size-7 place-items-center rounded-full bg-surface-2 text-xs font-semibold text-muted"

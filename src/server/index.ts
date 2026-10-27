@@ -9,6 +9,7 @@ const db = connect(process.env.DATABASE_URL ?? "postgres://makeit:makeit@127.0.0
 await migrateDb(db)
 const app = createApp({
   db,
+  baseUrl,
   secureCookies: process.env.SECURE_COOKIES
     ? process.env.SECURE_COOKIES === "true"
     : baseUrl.startsWith("https://"),

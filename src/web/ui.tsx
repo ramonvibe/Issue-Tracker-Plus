@@ -39,22 +39,27 @@ export function ErrorText({ error }: { error: Error | null }) {
   ) : null
 }
 
-// Floating error message; stays until replaced or dismissed after a few seconds.
-export function Toast({ error, onDismiss }: { error: Error | null; onDismiss: () => void }) {
+export type ToastMessage = { text: string; tone: "error" | "ok" }
+
+// Floating message; errors are alerts, confirmations are polite status updates.
+export function Toast({ message, onDismiss }: { message: ToastMessage | null; onDismiss: () => void }) {
   useEffect(() => {
-    if (!error) return
-    const timer = setTimeout(onDismiss, 6000)
+    if (!message) return
+    const timer = setTimeout(onDismiss, message.tone === "error" ? 6000 : 2500)
     return () => clearTimeout(timer)
-  }, [error, onDismiss])
-  if (!error) return null
+  }, [message, onDismiss])
+  if (!message) return null
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-5 z-40 flex justify-center px-4">
       <div
-        role="alert"
+        role={message.tone === "error" ? "alert" : "status"}
         className="pointer-events-auto flex max-w-lg animate-pop items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 text-sm shadow-float"
       >
-        <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-danger" />
-        <span>{error.message}</span>
+        <span
+          aria-hidden="true"
+          className={`size-2 shrink-0 rounded-full ${message.tone === "error" ? "bg-danger" : "bg-[var(--st-done)]"}`}
+        />
+        <span>{message.text}</span>
         <button
           type="button"
           onClick={onDismiss}

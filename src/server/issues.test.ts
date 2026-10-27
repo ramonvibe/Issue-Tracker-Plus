@@ -11,7 +11,9 @@ import {
   getIssue,
   issueInput,
   issuePatch,
+  linkPr,
   moveIssue,
+  prInput,
   updateCriterion,
   updateIssue,
 } from "./issues.ts"
@@ -293,5 +295,25 @@ describe("issue panel", () => {
   test("comments must have content", async () => {
     await create("Comentável")
     await expect(addComment(db, "PLAT-1", "   ", actor)).rejects.toMatchObject({ status: 422 })
+  })
+})
+
+describe("pull requests", () => {
+  test("links a branch and a PR, parsing its number, and logs it", async () => {
+    await create("Com PR")
+    const linked = await linkPr(
+      db,
+      "PLAT-1",
+      prInput.parse({ branch: "plat-1-com-pr", pr_url: "https://github.com/acme/app/pull/42" }),
+      actor,
+    )
+    expect(linked).toMatchObject({ branch: "plat-1-com-pr", prNumber: 42, prState: "open" })
+    expect((await events("PLAT-1")).at(-1)).toMatchObject({
+      kind: "pr_linked",
+      data: { branch: "plat-1-com-pr" },
+    })
+    expect(prInput.safeParse({}).success).toBe(false)
+    expect(prInput.safeParse({ branch: "bad branch" }).success).toBe(false)
+    expect(prInput.safeParse({ pr_url: "javascript:alert(1)" }).success).toBe(false)
   })
 })
