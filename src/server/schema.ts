@@ -188,3 +188,10 @@ export const eventRelations = relations(issueEvents, ({ one }) => ({
   actor: one(users, { fields: [issueEvents.actorId], references: [users.id] }),
   token: one(apiTokens, { fields: [issueEvents.tokenId], references: [apiTokens.id] }),
 }))
+
+// Processed X-GitHub-Delivery ids: GitHub retries and redeliveries must not apply twice.
+export const githubDeliveries = pgTable("github_deliveries", {
+  deliveryId: text("delivery_id").primaryKey(),
+  event: text("event").notNull(),
+  processedAt: timestamp("processed_at", { withTimezone: true }).notNull().defaultNow(),
+})

@@ -1,5 +1,8 @@
 # Makeit-Fast
 
+> [!WARNING]
+> **Projeto abandonado.** As regras de negócio deste tracker não serviam ao uso real, então ele não será continuado. O sucessor é o [Issue-Tracker (Motion)](https://github.com/ramonvibe/Issue-Tracker). O código fica público como referência de UX.
+
 Issue tracker para desenvolvimento com agentes de IA: o humano define critérios e revisa, agentes implementam.
 Sucessor do 1984. Stack: React + Vite, Hono (Node 24), PostgreSQL + Drizzle.
 
